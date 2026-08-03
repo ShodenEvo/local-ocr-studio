@@ -245,6 +245,10 @@ async def process_image(
     restoration_sharpen: float = Form(0.5),
     compare_original: bool = Form(True),
     ai_super_resolution: bool = Form(False),
+    expected_min_length: int = Form(4),
+    expected_max_length: int = Form(24),
+    require_mixed_alnum: bool = Form(False),
+    selection_strategy: str = Form("consensus"),
 ) -> dict[str, Any]:
     raw = await file.read()
     if not raw:

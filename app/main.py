@@ -3,8 +3,11 @@ from __future__ import annotations
 import base64
 import io
 import os
+import platform
 import re
 import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
@@ -45,13 +48,66 @@ _easyocr_device = None
 _easyocr_lock = Lock()
 
 
+def detect_display_adapters() -> list[str]:
+    """Best-effort hardware detection used only for clearer status messages."""
+    adapters: list[str] = []
+
+    try:
+        if platform.system() == "Windows":
+            command = [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_VideoController | "
+                "Select-Object -ExpandProperty Name",
+            ]
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            adapters = [
+                line.strip()
+                for line in result.stdout.splitlines()
+                if line.strip()
+            ]
+        elif platform.system() == "Linux":
+            result = subprocess.run(
+                ["sh", "-c", "lspci 2>/dev/null | grep -Ei 'VGA|3D|Display'"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            adapters = [
+                line.strip()
+                for line in result.stdout.splitlines()
+                if line.strip()
+            ]
+    except Exception:
+        pass
+
+    return adapters
+
+
 def get_torch_status() -> dict[str, Any]:
-    """Report the active PyTorch accelerator without requiring GPU support."""
+    """Report both installed hardware and the active PyTorch accelerator."""
+    adapters = detect_display_adapters()
+    adapter_text = " | ".join(adapters).lower()
+    amd_detected = any(token in adapter_text for token in ("amd", "radeon"))
+    nvidia_detected = "nvidia" in adapter_text
+
     try:
         import torch
 
         gpu_available = bool(torch.cuda.is_available())
-        hip_runtime = str(torch.version.hip) if getattr(torch.version, "hip", None) else None
+        hip_runtime = (
+            str(torch.version.hip)
+            if getattr(torch.version, "hip", None)
+            else None
+        )
         cuda_runtime = str(torch.version.cuda) if torch.version.cuda else None
 
         if gpu_available and hip_runtime:
@@ -60,6 +116,22 @@ def get_torch_status() -> dict[str, Any]:
             backend = "cuda"
         else:
             backend = "cpu"
+
+        note = None
+        if backend == "cpu" and amd_detected and platform.system() == "Windows":
+            note = (
+                "AMD GPU detected, but this PyTorch environment has no active "
+                "ROCm backend. EasyOCR is running on CPU."
+            )
+        elif backend == "cpu" and amd_detected:
+            note = (
+                "AMD GPU detected, but a compatible ROCm-enabled PyTorch build "
+                "is not active."
+            )
+        elif backend == "cpu" and nvidia_detected:
+            note = (
+                "NVIDIA GPU detected, but the installed PyTorch build is CPU-only."
+            )
 
         return {
             "installed": True,
@@ -71,6 +143,10 @@ def get_torch_status() -> dict[str, Any]:
             "hip_runtime": hip_runtime,
             "device_count": int(torch.cuda.device_count()) if gpu_available else 0,
             "device_name": torch.cuda.get_device_name(0) if gpu_available else None,
+            "display_adapters": adapters,
+            "amd_hardware_detected": amd_detected,
+            "nvidia_hardware_detected": nvidia_detected,
+            "note": note,
         }
     except Exception as exc:
         return {
@@ -83,8 +159,28 @@ def get_torch_status() -> dict[str, Any]:
             "hip_runtime": None,
             "device_count": 0,
             "device_name": None,
+            "display_adapters": adapters,
+            "amd_hardware_detected": amd_detected,
+            "nvidia_hardware_detected": nvidia_detected,
+            "note": "PyTorch is not installed.",
             "error": str(exc),
         }
+
+
+def tesseract_available() -> bool:
+    try:
+        pytesseract.get_tesseract_version()
+        return True
+    except Exception:
+        return False
+
+
+def easyocr_available() -> bool:
+    try:
+        import easyocr  # noqa: F401
+        return True
+    except Exception:
+        return False
 
 
 @dataclass
@@ -103,20 +199,12 @@ def home(request: Request):
 
 @app.get("/api/status")
 def status() -> dict[str, Any]:
-    tesseract_ok = False
+    tesseract_ok = tesseract_available()
     tesseract_version = None
-    try:
+    if tesseract_ok:
         tesseract_version = str(pytesseract.get_tesseract_version())
-        tesseract_ok = True
-    except Exception:
-        pass
 
-    easyocr_installed = False
-    try:
-        import easyocr  # noqa: F401
-        easyocr_installed = True
-    except Exception:
-        pass
+    easyocr_installed = easyocr_available()
 
     torch_status = get_torch_status()
     return {
@@ -127,6 +215,7 @@ def status() -> dict[str, Any]:
             "device": _easyocr_device,
         },
         "gpu": torch_status,
+        "restoration": get_restoration_status(),
     }
 
 
@@ -147,6 +236,15 @@ async def process_image(
     crop_y: int = Form(0),
     crop_w: int = Form(0),
     crop_h: int = Form(0),
+    restoration_enabled: bool = Form(False),
+    restoration_mode: str = Form("manual"),
+    restoration_scale: int = Form(2),
+    deblur_strength: float = Form(0.8),
+    denoise_strength: int = Form(6),
+    deblock_strength: int = Form(1),
+    restoration_sharpen: float = Form(0.5),
+    compare_original: bool = Form(True),
+    ai_super_resolution: bool = Form(False),
 ) -> dict[str, Any]:
     raw = await file.read()
     if not raw:
@@ -157,45 +255,139 @@ async def process_image(
         raise HTTPException(400, "Unsupported or invalid image")
 
     source = crop_image(image, crop_x, crop_y, crop_w, crop_h)
-    candidates = enhancement_candidates(source, upscale, clahe, sharpen, blur)
 
-    if invert:
-        candidates = {name: cv2.bitwise_not(img) for name, img in candidates.items()}
+    image_sources: dict[str, np.ndarray] = {"original": source}
+    restoration_notes: list[str] = []
 
-    selected_names = list(candidates) if method == "auto" else [method]
-    selected_names = [name for name in selected_names if name in candidates]
+    if restoration_enabled:
+        if restoration_mode == "automatic":
+            image_sources.update(
+                automatic_restoration_variants(
+                    source,
+                    scale=restoration_scale,
+                    include_ai=ai_super_resolution,
+                )
+            )
+            restoration_notes.append(
+                "Automatic restoration tested multiple restoration paths. "
+                "Review disagreements manually; confidence alone is not authoritative."
+            )
+        else:
+            restored = restore_image_manual(
+                source,
+                scale=restoration_scale,
+                deblur_strength=deblur_strength,
+                denoise_strength=denoise_strength,
+                deblock_strength=deblock_strength,
+                sharpen_strength=restoration_sharpen,
+            )
+            image_sources["restored_manual"] = restored
+
+            if ai_super_resolution:
+                ai_image, ai_note = run_optional_ai_super_resolution(
+                    source, restoration_scale
+                )
+                if ai_image is not None:
+                    image_sources["restored_ai"] = ai_image
+                if ai_note:
+                    restoration_notes.append(ai_note)
+
+        if not compare_original:
+            image_sources.pop("original", None)
+
+    candidates: dict[str, np.ndarray] = {}
+    candidate_sources: dict[str, str] = {}
+
+    for source_name, source_image in image_sources.items():
+        source_candidates = enhancement_candidates(
+            source_image, upscale, clahe, sharpen, blur
+        )
+        for enhancement_name, candidate in source_candidates.items():
+            combined_name = f"{source_name}::{enhancement_name}"
+            candidates[combined_name] = (
+                cv2.bitwise_not(candidate) if invert else candidate
+            )
+            candidate_sources[combined_name] = source_name
+
+    if method == "auto":
+        selected_names = list(candidates)
+    else:
+        selected_names = [
+            name for name in candidates
+            if name.endswith(f"::{method}")
+        ]
+
     if not selected_names:
-        selected_names = ["clahe_sharpen"]
+        selected_names = [next(iter(candidates))]
 
-    engines = [engine] if engine != "ensemble" else ["tesseract", "easyocr"]
+    requested_engines = (
+        [engine] if engine != "ensemble" else ["tesseract", "easyocr"]
+    )
+    engines: list[str] = []
+
+    if "tesseract" in requested_engines and tesseract_available():
+        engines.append("tesseract")
+    if "easyocr" in requested_engines and easyocr_available():
+        engines.append("easyocr")
+
+    if not engines:
+        raise HTTPException(
+            500,
+            "No OCR engine is available. Install Tesseract and/or EasyOCR.",
+        )
+
     all_hits: list[OCRHit] = []
     attempts: list[dict[str, Any]] = []
 
+    if "tesseract" in requested_engines and "tesseract" not in engines:
+        attempts.append({
+            "engine": "tesseract",
+            "method": "unavailable",
+            "text": "",
+            "confidence": 0,
+            "score": -1000,
+            "count": 0,
+            "error": "Tesseract is not installed or was not detected.",
+        })
+
+    if "easyocr" in requested_engines and "easyocr" not in engines:
+        attempts.append({
+            "engine": "easyocr",
+            "method": "unavailable",
+            "text": "",
+            "confidence": 0,
+            "score": -1000,
+            "count": 0,
+            "error": "EasyOCR is not installed.",
+        })
+
     for method_name in selected_names:
         candidate = candidates[method_name]
+
         if "tesseract" in engines:
-            hits = run_tesseract(candidate, method_name, psm, confidence, allowlist)
+            hits = run_tesseract(
+                candidate, method_name, psm, confidence, allowlist
+            )
             all_hits.extend(hits)
-            attempts.append(summarize_attempt("tesseract", method_name, hits))
+            attempts.append(
+                summarize_attempt("tesseract", method_name, hits)
+            )
 
         if "easyocr" in engines:
-            try:
-                hits = run_easyocr(candidate, method_name, confidence, allowlist)
-                all_hits.extend(hits)
-                attempts.append(summarize_attempt("easyocr", method_name, hits))
-            except ImportError:
-                attempts.append({
-                    "engine": "easyocr",
-                    "method": method_name,
-                    "error": "EasyOCR is not installed",
-                    "text": "",
-                    "confidence": 0,
-                })
+            hits = run_easyocr(
+                candidate, method_name, confidence, allowlist
+            )
+            all_hits.extend(hits)
+            attempts.append(
+                summarize_attempt("easyocr", method_name, hits)
+            )
 
     best_attempt = choose_best_attempt(attempts)
     best_method = best_attempt.get("method", selected_names[0])
     best_engine = best_attempt.get("engine", engine)
     best_image = candidates.get(best_method, candidates[selected_names[0]])
+    best_source = candidate_sources.get(best_method, "original")
+    display_method = best_method.split("::", 1)[-1]
 
     best_hits = [
         hit for hit in all_hits
@@ -207,11 +399,18 @@ async def process_image(
         "text": best_attempt.get("text", ""),
         "confidence": round(float(best_attempt.get("confidence", 0.0)), 2),
         "engine": best_engine,
-        "method": best_method,
+        "method": display_method,
+        "processing_source": best_source,
+        "restoration_enabled": restoration_enabled,
+        "restoration_mode": restoration_mode if restoration_enabled else "off",
+        "restoration_notes": restoration_notes,
         "hits": [hit_to_dict(hit) for hit in best_hits],
         "attempts": sorted(attempts, key=lambda x: x.get("score", -9999), reverse=True),
         "source_image": encode_png(source),
         "enhanced_image": encode_png(best_image),
+        "restored_image": encode_png(
+            image_sources.get(best_source, source)
+        ),
         "annotated_image": encode_png(annotated),
     }
 
@@ -230,6 +429,167 @@ def crop_image(image: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarray:
     w = max(1, min(w, width - x))
     h = max(1, min(h, height - y))
     return image[y:y + h, x:x + w].copy()
+
+
+
+def get_restoration_status() -> dict[str, Any]:
+    model_path = os.getenv("SUPERRES_MODEL_PATH", "").strip()
+    model_exists = bool(model_path and Path(model_path).exists())
+    dnn_superres_available = hasattr(cv2, "dnn_superres")
+
+    return {
+        "manual_available": True,
+        "automatic_available": True,
+        "ai_available": bool(model_exists and dnn_superres_available),
+        "ai_model_path": model_path if model_exists else None,
+        "ai_note": (
+            "Optional OpenCV DNN super-resolution model is ready."
+            if model_exists and dnn_superres_available
+            else "AI super-resolution is optional. Configure SUPERRES_MODEL_PATH "
+                 "and install opencv-contrib-python to enable it."
+        ),
+    }
+
+
+def odd_kernel(value: int, minimum: int = 1, maximum: int = 15) -> int:
+    value = max(minimum, min(int(value), maximum))
+    return value if value % 2 else value + 1
+
+
+def reduce_block_artifacts(image: np.ndarray, strength: int) -> np.ndarray:
+    if strength <= 0:
+        return image.copy()
+
+    # Edge-preserving deblocking. Multiple light passes are safer for OCR than
+    # one aggressive pass that can erase thin character strokes.
+    result = image.copy()
+    passes = max(1, min(int(strength), 3))
+    for _ in range(passes):
+        result = cv2.bilateralFilter(result, 5, 28, 28)
+    return result
+
+
+def wiener_like_deblur(gray: np.ndarray, strength: float) -> np.ndarray:
+    """Conservative frequency-domain deblur intended for OCR preprocessing."""
+    strength = max(0.0, min(float(strength), 2.0))
+    if strength <= 0:
+        return gray.copy()
+
+    sigma = 0.8 + strength * 0.9
+    blurred = cv2.GaussianBlur(gray, (0, 0), sigmaX=sigma)
+    amount = 0.45 + strength * 0.55
+    return cv2.addWeighted(gray, 1.0 + amount, blurred, -amount, 0)
+
+
+def restore_image_manual(
+    image: np.ndarray,
+    scale: int,
+    deblur_strength: float,
+    denoise_strength: int,
+    deblock_strength: int,
+    sharpen_strength: float,
+) -> np.ndarray:
+    scale = max(1, min(int(scale), 4))
+    working = reduce_block_artifacts(image, deblock_strength)
+
+    if denoise_strength > 0:
+        h = max(1, min(int(denoise_strength), 20))
+        working = cv2.fastNlMeansDenoisingColored(
+            working, None, h, h, 7, 21
+        )
+
+    if scale > 1:
+        working = cv2.resize(
+            working,
+            None,
+            fx=scale,
+            fy=scale,
+            interpolation=cv2.INTER_LANCZOS4,
+        )
+
+    lab = cv2.cvtColor(working, cv2.COLOR_BGR2LAB)
+    lightness, a_channel, b_channel = cv2.split(lab)
+    lightness = wiener_like_deblur(lightness, deblur_strength)
+
+    if sharpen_strength > 0:
+        soft = cv2.GaussianBlur(lightness, (0, 0), 1.0)
+        amount = max(0.0, min(float(sharpen_strength), 2.5))
+        lightness = cv2.addWeighted(
+            lightness, 1.0 + amount, soft, -amount, 0
+        )
+
+    restored = cv2.cvtColor(
+        cv2.merge((lightness, a_channel, b_channel)),
+        cv2.COLOR_LAB2BGR,
+    )
+    return restored
+
+
+def automatic_restoration_variants(
+    image: np.ndarray,
+    scale: int,
+    include_ai: bool,
+) -> dict[str, np.ndarray]:
+    scale = max(2, min(int(scale), 4))
+    variants = {
+        "restored_light": restore_image_manual(image, scale, 0.35, 3, 0, 0.25),
+        "restored_balanced": restore_image_manual(image, scale, 0.8, 6, 1, 0.55),
+        "restored_strong": restore_image_manual(image, scale, 1.35, 9, 2, 0.9),
+    }
+
+    # Keep a pure resampling path because aggressive restoration can damage
+    # already-readable character edges.
+    variants["upscaled_lanczos"] = cv2.resize(
+        image,
+        None,
+        fx=scale,
+        fy=scale,
+        interpolation=cv2.INTER_LANCZOS4,
+    )
+
+    if include_ai:
+        ai_image, _ = run_optional_ai_super_resolution(image, scale)
+        if ai_image is not None:
+            variants["restored_ai"] = ai_image
+
+    return variants
+
+
+def run_optional_ai_super_resolution(
+    image: np.ndarray,
+    requested_scale: int,
+) -> tuple[np.ndarray | None, str | None]:
+    model_path = os.getenv("SUPERRES_MODEL_PATH", "").strip()
+    if not model_path:
+        return None, (
+            "AI super-resolution was requested but SUPERRES_MODEL_PATH is not set. "
+            "Manual and automatic OCR-safe restoration were still applied."
+        )
+
+    if not Path(model_path).exists():
+        return None, f"AI model was not found: {model_path}"
+
+    if not hasattr(cv2, "dnn_superres"):
+        return None, (
+            "AI super-resolution requires opencv-contrib-python. "
+            "The standard opencv-python package does not include dnn_superres."
+        )
+
+    scale = max(2, min(int(requested_scale), 4))
+    model_name = os.getenv("SUPERRES_MODEL_NAME", "edsr").strip().lower()
+    model_scale = int(os.getenv("SUPERRES_MODEL_SCALE", str(scale)))
+
+    try:
+        sr = cv2.dnn_superres.DnnSuperResImpl_create()
+        sr.readModel(model_path)
+        sr.setModel(model_name, model_scale)
+        output = sr.upsample(image)
+        return output, (
+            "AI-restored pixels are synthetic estimates. Verify every character "
+            "against the original image."
+        )
+    except Exception as exc:
+        return None, f"AI super-resolution failed: {exc}"
 
 
 def enhancement_candidates(

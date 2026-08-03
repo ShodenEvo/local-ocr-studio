@@ -58,7 +58,52 @@
     </section>
 
     <section>
-      <h2>3. Enhancement</h2>
+      <h2>3. Restoration &amp; upscale</h2>
+      <label class="checkbox feature-toggle">
+        <input id="restoration_enabled" type="checkbox">
+        Enable restoration before OCR
+      </label>
+      <div id="restorationOptions" class="sub-options disabled-options">
+        <label>Mode
+          <select id="restoration_mode">
+            <option value="manual">Manual controls</option>
+            <option value="automatic">Automatic comparison</option>
+          </select>
+        </label>
+        <label>Restoration upscale
+          <select id="restoration_scale">
+            <option value="2">2×</option>
+            <option value="3">3×</option>
+            <option value="4">4×</option>
+          </select>
+        </label>
+        <div id="manualRestorationOptions">
+          <label>Deblur strength <output id="deblur_strengthValue">0.8</output>
+            <input id="deblur_strength" type="range" min="0" max="2" step="0.1" value="0.8">
+          </label>
+          <label>Denoise <output id="denoise_strengthValue">6</output>
+            <input id="denoise_strength" type="range" min="0" max="20" step="1" value="6">
+          </label>
+          <label>Artifact removal
+            <select id="deblock_strength">
+              <option value="0">Off</option>
+              <option value="1" selected>Light</option>
+              <option value="2">Medium</option>
+              <option value="3">Strong</option>
+            </select>
+          </label>
+          <label>Restoration sharpen <output id="restoration_sharpenValue">0.5</output>
+            <input id="restoration_sharpen" type="range" min="0" max="2.5" step="0.1" value="0.5">
+          </label>
+        </div>
+        <label class="checkbox"><input id="compare_original" type="checkbox" checked>Also OCR the original image</label>
+        <label class="checkbox"><input id="ai_super_resolution" type="checkbox">Use optional AI super-resolution model</label>
+        <p id="restorationHelp" class="muted warning-text">Automatic mode shows all attempts. It does not rely only on OCR confidence.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. OCR enhancement</h2>
       <label>Method
         <select id="method">
           <option value="auto">Try all methods automatically</option>
@@ -93,6 +138,7 @@
   <section class="workspace">
     <div class="tabs">
       <button class="tab active" data-tab="source">Source</button>
+      <button class="tab" data-tab="restored">Restored</button>
       <button class="tab" data-tab="enhanced">Enhanced</button>
       <button class="tab" data-tab="annotated">Detected text</button>
     </div>
@@ -106,6 +152,7 @@
         <div class="result-title"><h2>Detected text</h2><button id="copyBtn">Copy</button></div>
         <textarea id="resultText" readonly placeholder="OCR output will appear here"></textarea>
         <div id="summary" class="summary"></div>
+        <div id="restorationNotice" class="restoration-notice hidden"></div>
       </section>
       <section class="panel attempts-card">
         <h2>Recognition attempts</h2>

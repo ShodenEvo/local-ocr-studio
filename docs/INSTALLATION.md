@@ -1,20 +1,35 @@
-# Installation
+# Installation and Requirements
 
-## Supported configurations
+## Checklist
 
-| OS | Backend | Status |
-|---|---|---|
-| Windows 10/11 | CPU | Supported |
-| Windows 10/11 + NVIDIA | CUDA | Supported |
-| Windows 10/11 + AMD | CPU | Supported |
-| Windows 10/11 + AMD | DirectML | Experimental; not currently wired into EasyOCR |
-| Linux + NVIDIA | CUDA | Supported |
-| Linux + compatible AMD | ROCm | Supported |
-| Linux | CPU | Supported |
+- Python 3.11 or 3.12
+- 64-bit Windows 10/11 or supported 64-bit Linux
+- Native Tesseract executable if using Tesseract
+- English language data (`eng.traineddata`)
+- EasyOCR and PyTorch in the project virtual environment
+- Internet access for first installation and EasyOCR model download
+- Current driver/runtime for the selected GPU backend
 
-Python 3.11 or 3.12 is recommended.
+## Windows Tesseract
 
-## Windows CPU or AMD CPU fallback
+```powershell
+winget install --exact --id UB-Mannheim.TesseractOCR
+```
+
+Expected path:
+
+```text
+C:\Program Files\Tesseract-OCR\tesseract.exe
+```
+
+Verify:
+
+```powershell
+& "C:\Program Files\Tesseract-OCR\tesseract.exe" --version
+& "C:\Program Files\Tesseract-OCR\tesseract.exe" --list-langs
+```
+
+## Windows CPU
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
@@ -22,12 +37,36 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\start_windows.ps1
 ```
 
-## Windows NVIDIA CUDA
+## Windows NVIDIA
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\install_windows_nvidia.ps1
 .\scripts\start_windows.ps1
+```
+
+## Windows AMD
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\install_windows_amd.ps1
+.\scripts\start_windows.ps1
+```
+
+The default Windows AMD installation uses CPU PyTorch. Windows ROCm is limited to AMD-listed hardware and current framework combinations.
+
+## Debian/Ubuntu native packages
+
+```bash
+sudo apt update
+sudo apt install -y \
+  python3 \
+  python3-venv \
+  python3-pip \
+  tesseract-ocr \
+  tesseract-ocr-eng \
+  libgl1 \
+  libglib2.0-0
 ```
 
 ## Linux CPU
@@ -38,44 +77,33 @@ chmod +x scripts/*.sh
 ./scripts/start_linux.sh
 ```
 
-## Linux NVIDIA CUDA
+## Linux NVIDIA
 
-Install a compatible NVIDIA driver and confirm `nvidia-smi`:
+Confirm `nvidia-smi`, then:
 
 ```bash
-chmod +x scripts/*.sh
 ./scripts/install_linux_nvidia.sh
 ./scripts/start_linux.sh
 ```
 
 ## Linux AMD ROCm
 
-1. Verify that AMD lists your exact GPU and distribution in its current ROCm compatibility matrix.
-2. Install the compatible ROCm release.
-3. Use the official PyTorch **Start Locally** selector to obtain the matching ROCm wheel index.
-4. Run:
+Check AMD's current compatibility matrix, install the matching ROCm release, and choose the corresponding PyTorch wheel:
 
 ```bash
-chmod +x scripts/*.sh
 export PYTORCH_ROCM_INDEX_URL="https://download.pytorch.org/whl/rocmX.Y"
 ./scripts/install_linux_amd_rocm.sh
 ./scripts/start_linux.sh
 ```
 
-The installer does not hard-code a ROCm wheel because supported ROCm/PyTorch combinations change over time.
-
-## Verification
-
-```bash
-venv/bin/python scripts/check_accelerator.py
-```
-
-or on Windows:
+## Diagnostics
 
 ```powershell
 .\venv\Scripts\python.exe .\scripts\check_accelerator.py
 ```
 
-Open `http://127.0.0.1:8095`.
+or:
 
-EasyOCR downloads model files during first use. Internet is required for that first model download; subsequent OCR processing is local.
+```bash
+venv/bin/python scripts/check_accelerator.py
+```

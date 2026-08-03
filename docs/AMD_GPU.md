@@ -1,39 +1,58 @@
 # AMD GPU Support
 
-## Linux: ROCm
+## Why AMD hardware may show CPU mode
 
-Local OCR Studio supports EasyOCR acceleration through a ROCm-enabled PyTorch build on compatible AMD GPUs. PyTorch uses the `torch.cuda` Python namespace for CUDA and ROCm devices, so this is expected:
+EasyOCR uses PyTorch. Detecting an AMD display adapter does not mean that the installed PyTorch wheel supports that adapter.
+
+The application reports hardware separately from the active backend.
+
+## Linux AMD
+
+ROCm is the preferred AMD GPU path on supported Linux systems.
+
+Requirements depend on:
+
+- Exact AMD GPU
+- Linux distribution and kernel
+- AMD driver and ROCm release
+- Matching ROCm-enabled PyTorch wheel
+- Supported Python version
+
+Verify:
 
 ```python
 import torch
+
+print(torch.__version__)
 print(torch.cuda.is_available())
 print(torch.version.hip)
-print(torch.cuda.get_device_name(0))
+print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
 ```
 
-A working environment should report:
+PyTorch uses the `torch.cuda` namespace for ROCm devices. That is expected.
+
+## Windows AMD
+
+The default supported configuration is CPU mode.
+
+AMD publishes Windows ROCm/PyTorch support for selected hardware and software combinations, but it is not universal. EasyOCR must also be validated with the chosen build.
+
+Therefore, the project does not silently replace a working CPU environment with an unverified Windows AMD package.
+
+The UI message:
 
 ```text
-GPU available: True
-Backend: ROCm
-HIP runtime: <version>
-Device: AMD Radeon ...
+AMD GPU detected — EasyOCR currently using CPU
 ```
 
-ROCm compatibility depends on the exact GPU, distribution, kernel, driver, Python, ROCm, and PyTorch versions. Check AMD's current matrix before reporting an application bug.
+is informational, not an application failure.
 
-## Windows: AMD
+## DirectML
 
-CPU mode is supported. DirectML can accelerate PyTorch workloads across DirectX 12 GPUs, but EasyOCR does not currently expose a dependable DirectML device path in this project. Windows AMD acceleration is therefore marked **experimental/not enabled**, rather than being presented as working.
+DirectML is not connected to EasyOCR in this release. Installing `torch-directml` alone does not cause EasyOCR to use it.
 
-An ONNX Runtime backend is the preferred future route for broad Windows AMD and Intel acceleration.
+The planned broader Windows backend is ONNX Runtime with DirectML.
 
 ## Reporting an AMD issue
 
-Attach the output of:
-
-```bash
-python scripts/check_accelerator.py
-```
-
-Include the exact GPU, OS/kernel, AMD driver, ROCm, PyTorch, Python, and installation command. Do not attach confidential images.
+Include exact GPU, OS, driver, ROCm version where applicable, Python, PyTorch, installation command, and the output from `scripts/check_accelerator.py`.

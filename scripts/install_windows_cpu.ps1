@@ -1,6 +1,7 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
+& "$Root\scripts\install_windows_prerequisites.ps1"
 if (-not (Test-Path ".\venv\Scripts\python.exe")) { py -3 -m venv venv }
 $Python = ".\venv\Scripts\python.exe"
 & $Python -m pip install --upgrade pip wheel

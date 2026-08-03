@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Added Manual and Automatic restoration/upscale modes.
+- Added original-versus-restored OCR comparison and restoration source labels.
+- Added conservative deblur, denoise, deblocking, and Lanczos upscale paths.
+- Added optional OpenCV DNN AI super-resolution model support.
+
+- Added Windows Tesseract prerequisite detection and optional WinGet installation.
+- Added an explicit Windows AMD installer with reliable CPU fallback.
+- Added hardware-aware AMD/NVIDIA status messages.
+- Automatic ensemble OCR now skips unavailable engines instead of failing.
+- Expanded README requirements and troubleshooting.
+
 All notable changes will be documented here.
 
 ## [Unreleased]

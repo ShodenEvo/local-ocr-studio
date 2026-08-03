@@ -29,3 +29,7 @@ ruff check .
 ## Pull requests
 
 Describe the problem, the implementation, test evidence, platform, Python version, and whether CPU/CUDA was used. Screenshots are welcome, but remove sensitive information first.
+
+## GPU-related reports
+
+Include the complete output of `python scripts/check_accelerator.py`, exact GPU model, driver version, and installation command. AMD ROCm reports must include the ROCm release and Linux distribution/kernel.

@@ -46,24 +46,41 @@ _easyocr_lock = Lock()
 
 
 def get_torch_status() -> dict[str, Any]:
-    """Return PyTorch/CUDA status without making GPU support mandatory."""
+    """Report the active PyTorch accelerator without requiring GPU support."""
     try:
         import torch
-        cuda_available = bool(torch.cuda.is_available())
+
+        gpu_available = bool(torch.cuda.is_available())
+        hip_runtime = str(torch.version.hip) if getattr(torch.version, "hip", None) else None
+        cuda_runtime = str(torch.version.cuda) if torch.version.cuda else None
+
+        if gpu_available and hip_runtime:
+            backend = "rocm"
+        elif gpu_available and cuda_runtime:
+            backend = "cuda"
+        else:
+            backend = "cpu"
+
         return {
             "installed": True,
             "version": str(torch.__version__),
-            "cuda_available": cuda_available,
-            "cuda_runtime": str(torch.version.cuda) if torch.version.cuda else None,
-            "device_count": int(torch.cuda.device_count()) if cuda_available else 0,
-            "device_name": torch.cuda.get_device_name(0) if cuda_available else None,
+            "backend": backend,
+            "cuda_available": gpu_available,
+            "gpu_available": gpu_available,
+            "cuda_runtime": cuda_runtime,
+            "hip_runtime": hip_runtime,
+            "device_count": int(torch.cuda.device_count()) if gpu_available else 0,
+            "device_name": torch.cuda.get_device_name(0) if gpu_available else None,
         }
     except Exception as exc:
         return {
             "installed": False,
             "version": None,
+            "backend": "unavailable",
             "cuda_available": False,
+            "gpu_available": False,
             "cuda_runtime": None,
+            "hip_runtime": None,
             "device_count": 0,
             "device_name": None,
             "error": str(exc),
@@ -329,13 +346,19 @@ def get_easyocr_reader():
             except ImportError as exc:
                 raise ImportError("EasyOCR/PyTorch is not installed") from exc
 
-            # EasyOCR uses CUDA automatically when the installed PyTorch build
-            # can see an NVIDIA GPU. Otherwise it falls back safely to CPU.
-            use_cuda = bool(torch.cuda.is_available())
-            _easyocr_device = "cuda" if use_cuda else "cpu"
+            # PyTorch exposes NVIDIA CUDA and AMD ROCm devices through
+            # torch.cuda, so EasyOCR uses the same GPU path for either backend.
+            use_gpu = bool(torch.cuda.is_available())
+            if use_gpu and getattr(torch.version, "hip", None):
+                _easyocr_device = "rocm"
+            elif use_gpu:
+                _easyocr_device = "cuda"
+            else:
+                _easyocr_device = "cpu"
+
             _easyocr_reader = easyocr.Reader(
                 ["en"],
-                gpu="cuda" if use_cuda else False,
+                gpu=True if use_gpu else False,
                 verbose=True,
             )
     return _easyocr_reader

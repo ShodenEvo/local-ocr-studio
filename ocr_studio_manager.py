@@ -271,7 +271,7 @@ class OCRStudioManager:
             text=(
                 "• Tesseract itself is a separate Windows program and is not silently installed.\n"
                 "• If Tesseract is missing, install it under C:\\Program Files\\Tesseract-OCR.\n"
-                "• CUDA acceleration is used by EasyOCR/PyTorch. Tesseract remains CPU-based.\n"
+                "• NVIDIA CUDA and Linux AMD ROCm can accelerate EasyOCR/PyTorch. Tesseract remains CPU-based.\n"
                 "• The installer can be run repeatedly to repair the environment."
             ),
             justify=tk.LEFT,

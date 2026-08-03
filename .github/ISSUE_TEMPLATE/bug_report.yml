@@ -38,3 +38,19 @@ body:
       options:
         - label: I removed confidential images, serial numbers, and personal data.
           required: true
+
+  - type: textarea
+    id: accelerator
+    attributes:
+      label: Accelerator diagnostics
+      description: Paste the complete output of scripts/check_accelerator.py.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: Exact GPU model
+      placeholder: NVIDIA RTX 3080 / AMD Radeon RX 7900 XTX / CPU only
+    validations:
+      required: true

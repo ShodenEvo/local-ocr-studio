@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Local OCR Studio</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>Local OCR Studio</h1>
+    <p>OpenCV enhancement with Tesseract and EasyOCR. Images remain on this computer.</p>
+  </div>
+  <div id="statusPills" class="pills"></div>
+</header>
+
+<main>
+  <aside class="panel controls">
+    <section>
+      <h2>1. Image</h2>
+      <label class="dropzone" id="dropzone">
+        <input id="fileInput" type="file" accept="image/*" hidden>
+        <strong>Drop an image here</strong>
+        <span>or click to browse</span>
+      </label>
+      <div class="button-row">
+        <button id="cropBtn" disabled>Select area</button>
+        <button id="clearCropBtn" disabled>Use full image</button>
+      </div>
+      <p id="cropInfo" class="muted">No crop selected</p>
+    </section>
+
+    <section>
+      <h2>2. OCR engine</h2>
+      <label>Engine
+        <select id="engine">
+          <option value="ensemble">Automatic ensemble</option>
+          <option value="easyocr">EasyOCR local AI</option>
+          <option value="tesseract">Tesseract</option>
+        </select>
+      </label>
+      <label>Page layout
+        <select id="psm">
+          <option value="11">Sparse text</option>
+          <option value="7">Single line</option>
+          <option value="8">Single word</option>
+          <option value="6">Text block</option>
+          <option value="3">Automatic page</option>
+        </select>
+      </label>
+      <label>Allowed characters
+        <input id="allowlist" value="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/." placeholder="Leave blank for all characters">
+      </label>
+      <label>Minimum confidence <output id="confidenceValue">0</output>%
+        <input id="confidence" type="range" min="0" max="90" step="5" value="0">
+      </label>
+    </section>
+
+    <section>
+      <h2>3. Enhancement</h2>
+      <label>Method
+        <select id="method">
+          <option value="auto">Try all methods automatically</option>
+          <option value="clahe_sharpen">CLAHE + sharpen</option>
+          <option value="clahe">CLAHE</option>
+          <option value="grayscale">Grayscale</option>
+          <option value="otsu">Otsu threshold</option>
+          <option value="adaptive">Adaptive threshold</option>
+          <option value="adaptive_inverted">Adaptive inverted</option>
+          <option value="blackhat">Black-hat engraving</option>
+          <option value="horizontal_gradient">Horizontal gradient</option>
+        </select>
+      </label>
+      <label>Upscale <output id="upscaleValue">3.0</output>x
+        <input id="upscale" type="range" min="1" max="6" step="0.5" value="3">
+      </label>
+      <label>CLAHE contrast <output id="claheValue">2.5</output>
+        <input id="clahe" type="range" min="1" max="8" step="0.5" value="2.5">
+      </label>
+      <label>Sharpen <output id="sharpenValue">0.7</output>
+        <input id="sharpen" type="range" min="0" max="3" step="0.1" value="0.7">
+      </label>
+      <label>Blur kernel
+        <select id="blur"><option>1</option><option>3</option><option>5</option><option>7</option></select>
+      </label>
+      <label class="checkbox"><input id="invert" type="checkbox">Invert output</label>
+    </section>
+
+    <button id="processBtn" class="primary" disabled>Enhance and read text</button>
+  </aside>
+
+  <section class="workspace">
+    <div class="tabs">
+      <button class="tab active" data-tab="source">Source</button>
+      <button class="tab" data-tab="enhanced">Enhanced</button>
+      <button class="tab" data-tab="annotated">Detected text</button>
+    </div>
+    <div class="viewer" id="viewer">
+      <canvas id="imageCanvas"></canvas>
+      <div id="emptyState">Load an image to begin</div>
+    </div>
+
+    <div class="results-grid">
+      <section class="panel result-card">
+        <div class="result-title"><h2>Detected text</h2><button id="copyBtn">Copy</button></div>
+        <textarea id="resultText" readonly placeholder="OCR output will appear here"></textarea>
+        <div id="summary" class="summary"></div>
+      </section>
+      <section class="panel attempts-card">
+        <h2>Recognition attempts</h2>
+        <div id="attempts"></div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<div id="busy" class="busy hidden"><div class="spinner"></div><p>Processing locally… EasyOCR may take longer on first use.</p></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+services:
+  local-ocr-studio:
+    build: .
+    ports:
+      - "8095:8095"
+    restart: unless-stopped

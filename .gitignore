@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Build outputs
+build/
+dist/
+*.spec
+*.exe
+
+# OCR/AI model caches
+.easyocr/
+.paddleocr/
+.torch/
+models/
+*.onnx
+*.pt
+*.pth
+
+# Local application data
+uploads/
+outputs/
+temp/
+logs/
+*.log
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

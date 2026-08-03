@@ -52,6 +52,25 @@
       <label>Allowed characters
         <input id="allowlist" value="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/." placeholder="Leave blank for all characters">
       </label>
+      <label>Automatic result selection
+        <select id="selection_strategy">
+          <option value="consensus" selected>Consensus across attempts</option>
+          <option value="original_first">Prefer original-image evidence</option>
+          <option value="confidence">Highest reported confidence (diagnostic)</option>
+        </select>
+      </label>
+      <div class="two-column-controls">
+        <label>Expected minimum length
+          <input id="expected_min_length" type="number" min="1" max="64" value="4">
+        </label>
+        <label>Expected maximum length
+          <input id="expected_max_length" type="number" min="1" max="128" value="24">
+        </label>
+      </div>
+      <label class="checkbox">
+        <input id="require_mixed_alnum" type="checkbox">
+        Require both letters and numbers
+      </label>
       <label>Minimum confidence <output id="confidenceValue">0</output>%
         <input id="confidence" type="range" min="0" max="90" step="5" value="0">
       </label>
@@ -115,6 +134,7 @@
           <option value="adaptive_inverted">Adaptive inverted</option>
           <option value="blackhat">Black-hat engraving</option>
           <option value="horizontal_gradient">Horizontal gradient</option>
+          <option value="engraving_relief">Engraving relief (grayscale)</option>
         </select>
       </label>
       <label>Upscale <output id="upscaleValue">3.0</output>x
@@ -156,7 +176,8 @@
       </section>
       <section class="panel attempts-card">
         <h2>Recognition attempts</h2>
-        <div id="attempts"></div>
+        <p class="attempt-help">Click any attempt to use its text. Automatic selection is only a starting point.</p>
+          <div id="attempts"></div>
       </section>
     </div>
   </section>

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added consensus-based OCR selection instead of confidence-only ranking.
+- Added expected text length and mixed-alphanumeric controls.
+- Added clickable manual result selection.
+- Added grayscale engraving-relief enhancement.
+- Disabled AI super-resolution when no model is configured.
+- Penalized destructive threshold and strong-restoration paths.
+
 - Added Manual and Automatic restoration/upscale modes.
 - Added original-versus-restored OCR comparison and restoration source labels.
 - Added conservative deblur, denoise, deblocking, and Lanczos upscale paths.

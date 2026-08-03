@@ -20,3 +20,8 @@ The optional AI backend uses OpenCV DNN Super Resolution when `opencv-contrib-py
 4. Try Automatic comparison if manual settings do not help.
 5. Use AI restoration only as another comparison path.
 6. Verify every character against the source.
+
+
+## Consensus and manual review
+
+Automatic selection uses agreement across multiple OCR and preprocessing paths rather than confidence alone. Short isolated outputs are penalized when they fall outside the configured expected length. Every attempt remains clickable for manual selection.

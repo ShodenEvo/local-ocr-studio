@@ -382,7 +382,16 @@ async def process_image(
                 summarize_attempt("easyocr", method_name, hits)
             )
 
-    best_attempt = choose_best_attempt(attempts)
+    attempts = enrich_attempts_with_consensus(
+        attempts,
+        expected_min_length=expected_min_length,
+        expected_max_length=expected_max_length,
+        require_mixed_alnum=require_mixed_alnum,
+    )
+    best_attempt = choose_best_attempt(
+        attempts,
+        strategy=selection_strategy,
+    )
     best_method = best_attempt.get("method", selected_names[0])
     best_engine = best_attempt.get("engine", engine)
     best_image = candidates.get(best_method, candidates[selected_names[0]])
@@ -404,6 +413,10 @@ async def process_image(
         "restoration_enabled": restoration_enabled,
         "restoration_mode": restoration_mode if restoration_enabled else "off",
         "restoration_notes": restoration_notes,
+        "selection_strategy": selection_strategy,
+        "expected_min_length": expected_min_length,
+        "expected_max_length": expected_max_length,
+        "require_mixed_alnum": require_mixed_alnum,
         "hits": [hit_to_dict(hit) for hit in best_hits],
         "attempts": sorted(attempts, key=lambda x: x.get("score", -9999), reverse=True),
         "source_image": encode_png(source),
@@ -642,6 +655,18 @@ def enhancement_candidates(
         cv2.getStructuringElement(cv2.MORPH_RECT, (5, 3)), iterations=1
     )
 
+    light_blur = cv2.GaussianBlur(clahe_img, (0, 0), 1.0)
+    relief_x = cv2.Scharr(light_blur, cv2.CV_32F, 1, 0)
+    relief_y = cv2.Scharr(light_blur, cv2.CV_32F, 0, 1)
+    relief_mag = cv2.magnitude(relief_x, relief_y)
+    relief_mag = cv2.normalize(
+        relief_mag, None, 0, 255, cv2.NORM_MINMAX
+    ).astype(np.uint8)
+    relief_soft = cv2.GaussianBlur(relief_mag, (3, 3), 0)
+    relief = cv2.addWeighted(
+        clahe_img, 0.72, relief_soft, 0.28, 0
+    )
+
     return {
         "grayscale": add_border(gray),
         "clahe": add_border(clahe_img),
@@ -651,6 +676,7 @@ def enhancement_candidates(
         "adaptive_inverted": add_border(adaptive_inv),
         "blackhat": add_border(blackhat_bin),
         "horizontal_gradient": add_border(gradient),
+        "engraving_relief": add_border(relief),
     }
 
 
@@ -754,30 +780,234 @@ def run_easyocr(
     return hits
 
 
-def summarize_attempt(engine: str, method: str, hits: list[OCRHit]) -> dict[str, Any]:
-    ordered = sorted(hits, key=lambda h: (min(p[1] for p in h.box), min(p[0] for p in h.box)))
+def normalize_ocr_text(text: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", text.upper())
+
+
+def levenshtein_distance(left: str, right: str) -> int:
+    if left == right:
+        return 0
+    if not left:
+        return len(right)
+    if not right:
+        return len(left)
+
+    previous = list(range(len(right) + 1))
+    for i, left_char in enumerate(left, start=1):
+        current = [i]
+        for j, right_char in enumerate(right, start=1):
+            current.append(min(
+                current[j - 1] + 1,
+                previous[j] + 1,
+                previous[j - 1] + (left_char != right_char),
+            ))
+        previous = current
+    return previous[-1]
+
+
+def method_risk_penalty(method: str) -> float:
+    name = method.lower()
+    penalty = 0.0
+
+    if "adaptive_inverted" in name:
+        penalty += 26.0
+    elif "adaptive" in name:
+        penalty += 17.0
+    elif "otsu" in name:
+        penalty += 13.0
+    elif "blackhat" in name:
+        penalty += 11.0
+    elif "horizontal_gradient" in name:
+        penalty += 8.0
+
+    if "restored_strong" in name:
+        penalty += 18.0
+    elif "restored_balanced" in name:
+        penalty += 7.0
+    elif "restored_ai" in name:
+        penalty += 9.0
+    elif "restored_light" in name:
+        penalty += 2.0
+
+    if method.startswith("original::"):
+        penalty -= 5.0
+
+    return penalty
+
+
+def summarize_attempt(
+    engine: str,
+    method: str,
+    hits: list[OCRHit],
+) -> dict[str, Any]:
+    ordered = sorted(
+        hits,
+        key=lambda hit: (
+            min(point[1] for point in hit.box),
+            min(point[0] for point in hit.box),
+        ),
+    )
     text = " ".join(hit.text for hit in ordered).strip()
-    confidence = float(np.mean([hit.confidence for hit in hits])) if hits else 0.0
-    alnum = sum(ch.isalnum() for ch in text)
-    mixed = any(ch.isalpha() for ch in text) and any(ch.isdigit() for ch in text)
-    score = confidence * 100 + min(alnum, 80) * 0.5 + (12 if mixed else 0)
-    if not text:
-        score = -1000
+    normalized = normalize_ocr_text(text)
+    confidence = (
+        float(np.mean([hit.confidence for hit in hits]))
+        if hits else 0.0
+    )
+
     return {
         "engine": engine,
         "method": method,
         "text": text,
+        "normalized_text": normalized,
         "confidence": confidence * 100,
-        "score": score,
         "count": len(hits),
+        "consensus_count": 0,
+        "consensus_engines": 0,
+        "consensus_sources": 0,
+        "score": -1000 if not text else 0,
     }
 
 
-def choose_best_attempt(attempts: list[dict[str, Any]]) -> dict[str, Any]:
-    valid = [a for a in attempts if a.get("text")]
+def enrich_attempts_with_consensus(
+    attempts: list[dict[str, Any]],
+    expected_min_length: int,
+    expected_max_length: int,
+    require_mixed_alnum: bool,
+) -> list[dict[str, Any]]:
+    minimum = max(1, int(expected_min_length))
+    maximum = max(minimum, int(expected_max_length))
+    valid = [
+        attempt for attempt in attempts
+        if attempt.get("normalized_text")
+    ]
+
+    for attempt in attempts:
+        normalized = attempt.get("normalized_text", "")
+        if not normalized:
+            attempt["score"] = -1000
+            attempt["warnings"] = ["no text"]
+            continue
+
+        length = len(normalized)
+        has_letters = any(char.isalpha() for char in normalized)
+        has_digits = any(char.isdigit() for char in normalized)
+        mixed = has_letters and has_digits
+
+        max_distance = 0 if length <= 4 else 1
+        if length >= 10:
+            max_distance = 2
+
+        close_attempts = []
+        for other in valid:
+            other_text = other.get("normalized_text", "")
+            if abs(len(other_text) - length) > max_distance:
+                continue
+            if levenshtein_distance(normalized, other_text) <= max_distance:
+                close_attempts.append(other)
+
+        engines = {
+            item.get("engine") for item in close_attempts
+            if item.get("engine")
+        }
+        sources = {
+            str(item.get("method", "")).split("::", 1)[0]
+            for item in close_attempts
+        }
+
+        attempt["consensus_count"] = len(close_attempts)
+        attempt["consensus_engines"] = len(engines)
+        attempt["consensus_sources"] = len(sources)
+
+        score = float(attempt.get("confidence", 0.0)) * 0.28
+        score += min(len(close_attempts), 8) * 13.0
+        score += max(0, len(engines) - 1) * 18.0
+        score += max(0, len(sources) - 1) * 10.0
+
+        if minimum <= length <= maximum:
+            score += 28.0
+        else:
+            distance = (
+                minimum - length
+                if length < minimum else length - maximum
+            )
+            score -= 35.0 + distance * 8.0
+
+        if length <= 2:
+            score -= 70.0
+        elif length == 3:
+            score -= 38.0
+
+        if mixed:
+            score += 12.0
+        elif require_mixed_alnum:
+            score -= 55.0
+
+        score -= method_risk_penalty(
+            str(attempt.get("method", ""))
+        )
+
+        detection_count = int(attempt.get("count", 0))
+        if detection_count > max(4, length):
+            score -= min(
+                25.0,
+                (detection_count - length) * 2.0,
+            )
+
+        attempt["score"] = score
+        attempt["within_expected_length"] = minimum <= length <= maximum
+        attempt["mixed_alnum"] = mixed
+
+        warnings = []
+        if length < minimum:
+            warnings.append(f"too short ({length} < {minimum})")
+        if length > maximum:
+            warnings.append(f"too long ({length} > {maximum})")
+        if require_mixed_alnum and not mixed:
+            warnings.append("letters and numbers required")
+        if len(close_attempts) <= 1:
+            warnings.append("no consensus")
+        attempt["warnings"] = warnings
+
+    return attempts
+
+
+def choose_best_attempt(
+    attempts: list[dict[str, Any]],
+    strategy: str = "consensus",
+) -> dict[str, Any]:
+    valid = [attempt for attempt in attempts if attempt.get("text")]
     if not valid:
-        return {"text": "", "confidence": 0, "engine": "none", "method": "none", "score": -1000}
-    return max(valid, key=lambda a: a.get("score", -1000))
+        return {
+            "text": "",
+            "confidence": 0,
+            "engine": "none",
+            "method": "none",
+            "score": -1000,
+        }
+
+    if strategy == "confidence":
+        return max(
+            valid,
+            key=lambda attempt: float(
+                attempt.get("confidence", 0.0)
+            ),
+        )
+
+    if strategy == "original_first":
+        original = [
+            attempt for attempt in valid
+            if str(attempt.get("method", "")).startswith("original::")
+        ]
+        if original:
+            return max(
+                original,
+                key=lambda attempt: attempt.get("score", -1000),
+            )
+
+    return max(
+        valid,
+        key=lambda attempt: attempt.get("score", -1000),
+    )
 
 
 def draw_hits(image: np.ndarray, hits: list[OCRHit]) -> np.ndarray:

@@ -25,6 +25,13 @@ fetch('/api/status').then(r=>r.json()).then(s=>{
   }
 
   const gpuTitle=gpu.note||'';
+  const aiBox=$('#ai_super_resolution');
+  if(aiBox && !s.restoration?.ai_available){
+    aiBox.checked=false;
+    aiBox.disabled=true;
+    aiBox.title=s.restoration?.ai_note||'AI model unavailable';
+  }
+
   p.innerHTML=`
     <span class="pill ${s.tesseract.available?'ok':'bad'}"
       title="${s.tesseract.available?'':'Install the native Tesseract OCR executable'}">
@@ -65,6 +72,35 @@ canvas.onmousedown=e=>{if(active!=='source'||!file)return;const r=canvas.getBoun
 canvas.onmousemove=e=>{if(!dragStart)return;show(images.source);const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;ctx.strokeStyle='#00d4ff';ctx.lineWidth=2;ctx.strokeRect(dragStart.x,dragStart.y,x-dragStart.x,y-dragStart.y)};
 canvas.onmouseup=e=>{if(!dragStart)return;const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top,s=parseFloat(canvas.dataset.scale||1);const x1=Math.max(0,Math.min(dragStart.x,x)),y1=Math.max(0,Math.min(dragStart.y,y)),x2=Math.max(dragStart.x,x),y2=Math.max(dragStart.y,y);crop={x:Math.round(x1/s),y:Math.round(y1/s),w:Math.round((x2-x1)/s),h:Math.round((y2-y1)/s)};dragStart=null;$('#cropInfo').textContent=`Crop: x ${crop.x}, y ${crop.y}, ${crop.w} × ${crop.h}px`;};
 $('#clearCropBtn').onclick=()=>{crop=null;$('#cropInfo').textContent=`${imgMeta.w} × ${imgMeta.h}px — full image`;show(images.source)};
-$('#processBtn').onclick=async()=>{if(!file)return;$('#busy').classList.remove('hidden');const fd=new FormData();fd.append('file',file);['engine','method','psm','upscale','clahe','sharpen','blur','confidence','allowlist','restoration_mode','restoration_scale','deblur_strength','denoise_strength','deblock_strength','restoration_sharpen'].forEach(id=>fd.append(id,$('#'+id).value));fd.append('invert',$('#invert').checked);fd.append('restoration_enabled',$('#restoration_enabled').checked);fd.append('compare_original',$('#compare_original').checked);fd.append('ai_super_resolution',$('#ai_super_resolution').checked);fd.append('crop_x',crop?.x||0);fd.append('crop_y',crop?.y||0);fd.append('crop_w',crop?.w||0);fd.append('crop_h',crop?.h||0);try{const r=await fetch('/api/process',{method:'POST',body:fd});if(!r.ok)throw new Error(await r.text());const d=await r.json();images.source=d.source_image;images.restored=d.restored_image;images.enhanced=d.enhanced_image;images.annotated=d.annotated_image;active='annotated';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==='annotated'));show(images.annotated);$('#resultText').value=d.text||'No OCR text detected.';$('#summary').textContent=`Engine: ${d.engine} | Source: ${d.processing_source} | Method: ${d.method} | Reported confidence: ${d.confidence}% | Detections: ${d.hits.length}`;const notice=$('#restorationNotice');const notes=d.restoration_notes||[];notice.textContent=notes.join(' ');notice.classList.toggle('hidden',notes.length===0);$('#attempts').innerHTML=d.attempts.slice(0,30).map(a=>`<div class="attempt"><strong>${a.engine} · ${(a.method||'').replace('::',' → ')}</strong><span>${(a.confidence||0).toFixed(1)}% — ${escapeHtml(a.text||a.error||'No text')}</span></div>`).join('');}catch(e){alert(e.message)}finally{$('#busy').classList.add('hidden')}};
+$('#processBtn').onclick=async()=>{if(!file)return;$('#busy').classList.remove('hidden');const fd=new FormData();fd.append('file',file);['engine','method','psm','upscale','clahe','sharpen','blur','confidence','allowlist','restoration_mode','restoration_scale','deblur_strength','denoise_strength','deblock_strength','restoration_sharpen','expected_min_length','expected_max_length','selection_strategy'].forEach(id=>fd.append(id,$('#'+id).value));fd.append('invert',$('#invert').checked);fd.append('restoration_enabled',$('#restoration_enabled').checked);fd.append('compare_original',$('#compare_original').checked);fd.append('ai_super_resolution',$('#ai_super_resolution').checked);fd.append('require_mixed_alnum',$('#require_mixed_alnum').checked);fd.append('crop_x',crop?.x||0);fd.append('crop_y',crop?.y||0);fd.append('crop_w',crop?.w||0);fd.append('crop_h',crop?.h||0);try{const r=await fetch('/api/process',{method:'POST',body:fd});if(!r.ok)throw new Error(await r.text());const d=await r.json();images.source=d.source_image;images.restored=d.restored_image;images.enhanced=d.enhanced_image;images.annotated=d.annotated_image;active='annotated';document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==='annotated'));show(images.annotated);$('#resultText').value=d.text||'No OCR text detected.';$('#summary').textContent=`Engine: ${d.engine} | Source: ${d.processing_source} | Method: ${d.method} | Reported confidence: ${d.confidence}% | Detections: ${d.hits.length}`;const notice=$('#restorationNotice');const notes=d.restoration_notes||[];notice.textContent=notes.join(' ');notice.classList.toggle('hidden',notes.length===0);const visibleAttempts=d.attempts.slice(0,40);
+$('#attempts').innerHTML=visibleAttempts.map((a,index)=>{
+  const warnings=(a.warnings||[])
+    .map(w=>`<span class="warning">${escapeHtml(w)}</span>`)
+    .join('');
+  return `<div class="attempt" data-index="${index}">
+    <strong>${a.engine} · ${(a.method||'').replace('::',' → ')}</strong>
+    <span>${(a.confidence||0).toFixed(1)}% — ${escapeHtml(a.text||a.error||'No text')}</span>
+    <div class="attempt-meta">
+      <span>consensus ${a.consensus_count||0}</span>
+      <span>engines ${a.consensus_engines||0}</span>
+      <span>sources ${a.consensus_sources||0}</span>
+      <span>score ${(a.score||0).toFixed(1)}</span>
+      ${warnings}
+    </div>
+  </div>`;
+}).join('');
+
+document.querySelectorAll('#attempts .attempt').forEach(el=>{
+  el.addEventListener('click',()=>{
+    const selected=visibleAttempts[Number(el.dataset.index)];
+    if(!selected)return;
+    document.querySelectorAll('#attempts .attempt')
+      .forEach(x=>x.classList.remove('selected-attempt'));
+    el.classList.add('selected-attempt');
+    $('#resultText').value=selected.text||'No OCR text detected.';
+    $('#summary').textContent=
+      `Manually selected | Engine: ${selected.engine} | Path: ${(selected.method||'').replace('::',' → ')} | Reported confidence: ${(selected.confidence||0).toFixed(2)}% | Consensus: ${selected.consensus_count||0}`;
+  });
+});}catch(e){alert(e.message)}finally{$('#busy').classList.add('hidden')}};
 $('#copyBtn').onclick=()=>navigator.clipboard.writeText($('#resultText').value);
 function escapeHtml(s){return s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}

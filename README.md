@@ -255,3 +255,20 @@ Apache License 2.0. See [LICENSE](LICENSE).
 ## Disclaimer
 
 OCR output can be incorrect. Always verify recognized identifiers against the source image before operational, legal, safety, or compliance use.
+
+
+## Consensus-based automatic result selection
+
+Reported OCR confidence is not treated as proof of correctness. The default selector now prioritizes agreement across engines, original/restored sources, and enhancement paths.
+
+New controls:
+
+- Expected minimum text length
+- Expected maximum text length
+- Optional requirement for both letters and numbers
+- Consensus selection
+- Prefer-original selection
+- Highest-confidence diagnostic selection
+- Clickable manual choice from all recognition attempts
+
+For shallow engraved identifiers, start with `Single line`, set the expected identifier length, and use grayscale, CLAHE, CLAHE + sharpen, or Engraving relief before hard threshold methods.

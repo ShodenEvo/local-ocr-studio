@@ -26,6 +26,8 @@ from starlette.requests import Request
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATE_DIR = BASE_DIR / "templates"
+PROJECT_DIR = BASE_DIR.parent
+DEFAULT_SUPERRES_MODEL_PATH = PROJECT_DIR / "models" / "EDSR_x2.pb"
 
 app = FastAPI(title="Local OCR Studio", version="1.0.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -449,21 +451,34 @@ def crop_image(image: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarray:
 
 
 
+
+def get_superres_model_path() -> Path | None:
+    configured = os.getenv("SUPERRES_MODEL_PATH", "").strip()
+
+    if configured:
+        return Path(configured).expanduser()
+
+    if DEFAULT_SUPERRES_MODEL_PATH.exists():
+        return DEFAULT_SUPERRES_MODEL_PATH
+
+    return None
+
+
 def get_restoration_status() -> dict[str, Any]:
-    model_path = os.getenv("SUPERRES_MODEL_PATH", "").strip()
-    model_exists = bool(model_path and Path(model_path).exists())
+    model_path = get_superres_model_path()
+    model_exists = bool(model_path and model_path.exists())
     dnn_superres_available = hasattr(cv2, "dnn_superres")
 
     return {
         "manual_available": True,
         "automatic_available": True,
         "ai_available": bool(model_exists and dnn_superres_available),
-        "ai_model_path": model_path if model_exists else None,
+        "ai_model_path": str(model_path) if model_exists else None,
         "ai_note": (
             "Optional OpenCV DNN super-resolution model is ready."
             if model_exists and dnn_superres_available
-            else "AI super-resolution is optional. Configure SUPERRES_MODEL_PATH "
-                 "and install opencv-contrib-python to enable it."
+            else "AI super-resolution is optional. Run the model installer or "
+                 "place EDSR_x2.pb under the project models directory."
         ),
     }
 
@@ -576,14 +591,15 @@ def run_optional_ai_super_resolution(
     image: np.ndarray,
     requested_scale: int,
 ) -> tuple[np.ndarray | None, str | None]:
-    model_path = os.getenv("SUPERRES_MODEL_PATH", "").strip()
-    if not model_path:
+    model_path = get_superres_model_path()
+    if model_path is None:
         return None, (
-            "AI super-resolution was requested but SUPERRES_MODEL_PATH is not set. "
-            "Manual and automatic OCR-safe restoration were still applied."
+            "AI super-resolution model is not installed. Run the model installer "
+            "or place EDSR_x2.pb under the project models directory. Manual and "
+            "automatic OCR-safe restoration were still applied."
         )
 
-    if not Path(model_path).exists():
+    if not model_path.exists():
         return None, f"AI model was not found: {model_path}"
 
     if not hasattr(cv2, "dnn_superres"):
@@ -598,7 +614,7 @@ def run_optional_ai_super_resolution(
 
     try:
         sr = cv2.dnn_superres.DnnSuperResImpl_create()
-        sr.readModel(model_path)
+        sr.readModel(str(model_path))
         sr.setModel(model_name, model_scale)
         output = sr.upsample(image)
         return output, (

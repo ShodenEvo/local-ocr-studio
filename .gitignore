@@ -44,3 +44,16 @@ logs/
 .idea/
 .DS_Store
 Thumbs.db
+
+
+# Optional downloaded AI models
+models/*.pb
+!models/.gitkeep
+
+# Windows executable build output
+build/
+dist/
+LocalOCRStudioControlPanel.exe
+LocalOCRStudioService.exe
+logs/*.log
+!logs/.gitkeep

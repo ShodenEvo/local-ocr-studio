@@ -107,3 +107,36 @@ or:
 ```bash
 venv/bin/python scripts/check_accelerator.py
 ```
+
+
+## Optional AI super-resolution
+
+The main requirements now install `opencv-contrib-python-headless`, which includes OpenCV's `dnn_superres` interface.
+
+Install the optional EDSR x2 model after the normal application setup.
+
+Windows:
+
+```powershell
+.\scripts\install_superres_model_windows.ps1
+```
+
+Linux:
+
+```bash
+./scripts/install_superres_model_linux.sh
+```
+
+The model is downloaded from:
+
+```text
+https://raw.githubusercontent.com/Saafke/EDSR_Tensorflow/master/models/EDSR_x2.pb
+```
+
+and saved to:
+
+```text
+models/EDSR_x2.pb
+```
+
+See `docs/SUPER_RESOLUTION.md`.

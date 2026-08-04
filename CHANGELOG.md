@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Fixed service project-root detection when running from the `service` bundle directory.
+
+- Fixed Windows service error 1053 by entering the SCM dispatcher explicitly.
+- Changed the service package from PyInstaller one-file to one-folder mode.
+- Added Windows service diagnostic script and event-log inspection.
+
+- Added a native Windows background service executable.
+- Added a Windows system-tray control panel executable.
+- Added build, install, repair, and uninstall scripts for the service.
+- Added automatic-start shortcut support for the control panel.
+- Added persistent service logging under `logs/service.log`.
+
+- Switched the OpenCV dependency to `opencv-contrib-python-headless` for `dnn_superres`.
+- Added Windows and Linux EDSR x2 model installation scripts.
+- Added automatic discovery of `models/EDSR_x2.pb`.
+- Added model download, verification, licensing, and troubleshooting documentation.
+- Added optional super-resolution environment variables to `.env.example`.
+
 - Added consensus-based OCR selection instead of confidence-only ranking.
 - Added expected text length and mixed-alphanumeric controls.
 - Added clickable manual result selection.

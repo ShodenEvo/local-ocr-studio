@@ -214,17 +214,37 @@ The interface includes an optional **Restoration & upscale** stage.
 - **Compare original** keeps the original OCR path in the result list so restoration disagreements are visible.
 - **Optional AI super-resolution** is disabled unless a compatible OpenCV DNN model is configured. AI-restored pixels are synthetic estimates and must be visually verified.
 
-To enable the optional OpenCV DNN super-resolution backend:
+To enable the optional OpenCV DNN super-resolution backend, first complete the normal application installation, then run:
+
+Windows:
 
 ```powershell
-.\venv\Scripts\python.exe -m pip uninstall -y opencv-python
-.\venv\Scripts\python.exe -m pip install opencv-contrib-python
-$env:SUPERRES_MODEL_PATH = "C:\models\EDSR_x2.pb"
-$env:SUPERRES_MODEL_NAME = "edsr"
-$env:SUPERRES_MODEL_SCALE = "2"
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\install_superres_model_windows.ps1
 ```
 
-The model file is not bundled. Use a model whose license permits redistribution or instruct users to download it from its official source. Manual and automatic OCR-safe restoration work without an AI model.
+Linux:
+
+```bash
+chmod +x scripts/install_superres_model_linux.sh
+./scripts/install_superres_model_linux.sh
+```
+
+The installer downloads:
+
+```text
+https://raw.githubusercontent.com/Saafke/EDSR_Tensorflow/master/models/EDSR_x2.pb
+```
+
+to the portable project path:
+
+```text
+models/EDSR_x2.pb
+```
+
+The application detects this path automatically. See [AI super-resolution setup](docs/SUPER_RESOLUTION.md) for manual installation, custom paths, verification, licensing, and troubleshooting.
+
+The model file is not committed to this repository. Manual and automatic OCR-safe restoration continue to work without it.
 
 **Important:** Super resolution cannot recover information that is absent from the source. Generative or learned restoration can create plausible but incorrect character strokes. Always compare against the original.
 
@@ -244,6 +264,8 @@ Use a tight crop, good focus, sufficient resolution, controlled exposure, low-an
 
 - [Detailed installation](docs/INSTALLATION.md)
 - [AMD GPU support](docs/AMD_GPU.md)
+- [AI super-resolution setup](docs/SUPER_RESOLUTION.md)
+- [Windows service and control panel](docs/WINDOWS_SERVICE.md)
 - [Privacy](docs/PRIVACY.md)
 - [Security](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
@@ -272,3 +294,15 @@ New controls:
 - Clickable manual choice from all recognition attempts
 
 For shallow engraved identifiers, start with `Single line`, set the expected identifier length, and use grayscale, CLAHE, CLAHE + sharpen, or Engraving relief before hard threshold methods.
+
+
+## Windows background service and control panel
+
+Build the Windows executables after completing the normal installation:
+
+```powershell
+.\scripts\build_windows_executables.ps1
+.\scripts\install_windows_service.ps1
+```
+
+This creates an automatically started Windows service and a tray control panel. See [Windows service and control panel](docs/WINDOWS_SERVICE.md).

@@ -61,7 +61,7 @@ GPU acceleration improves speed, not OCR accuracy by itself.
 ## Windows installation
 
 ```powershell
-git clone https://github.com/YOUR_USERNAME/local-ocr-studio.git
+git clone https://github.com/ShodenEvo/local-ocr-studio.git
 cd local-ocr-studio
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```

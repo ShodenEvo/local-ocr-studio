@@ -4,7 +4,7 @@ Local OCR Studio can run automatically in the background as a native Windows ser
 
 ## Components
 
-- `LocalOCRStudioService.exe` runs Uvicorn and the OCR application in Session 0.
+- `service\LocalOCRStudioService.exe` is a .NET 8 Windows service host that starts Uvicorn and the OCR application in Session 0.
 - `LocalOCRStudioControlPanel.exe` provides a desktop control panel and system-tray icon.
 - Closing the control panel minimizes it to the tray. It does not stop the service.
 - Service output is stored in `logs/service.log`.
@@ -29,8 +29,24 @@ The executables must remain in the project root because the service uses the adj
 
 ## Install the service
 
+Build the Windows executables first:
+
+```powershell
+.\scripts\build_windows_executables.ps1
+```
+
+Then install the service using either method:
+
+PowerShell:
+
 ```powershell
 .\scripts\install_windows_service.ps1
+```
+
+Installer executable:
+
+```powershell
+.\LocalOCRStudioInstaller.exe --install
 ```
 
 The installer requests administrator rights, installs the service with automatic startup, starts it, and adds the control panel to the current user's Startup folder in tray mode.
@@ -46,11 +62,11 @@ The installer requests administrator rights, installs the service with automatic
 Run these from an elevated PowerShell window:
 
 ```powershell
-.\LocalOCRStudioService.exe --startup auto install
-.\LocalOCRStudioService.exe start
-.\LocalOCRStudioService.exe stop
-.\LocalOCRStudioService.exe restart
-.\LocalOCRStudioService.exe remove
+.\service\LocalOCRStudioService.exe --install
+.\service\LocalOCRStudioService.exe --start
+.\service\LocalOCRStudioService.exe --stop
+.\service\LocalOCRStudioService.exe --status
+.\service\LocalOCRStudioService.exe --uninstall
 ```
 
 ## Network binding

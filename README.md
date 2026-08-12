@@ -302,7 +302,14 @@ Build the Windows executables after completing the normal installation:
 
 ```powershell
 .\scripts\build_windows_executables.ps1
-.\scripts\install_windows_service.ps1
 ```
 
-This creates an automatically started Windows service and a tray control panel. See [Windows service and control panel](docs/WINDOWS_SERVICE.md).
+Install the service using either the PowerShell installer or the new GUI installer:
+
+```powershell
+.\scripts\install_windows_service.ps1
+# or
+.\LocalOCRStudioInstaller.exe --install
+```
+
+This creates an automatically started Windows service, a tray control panel, and the new installer executable. See [Windows service and control panel](docs/WINDOWS_SERVICE.md).

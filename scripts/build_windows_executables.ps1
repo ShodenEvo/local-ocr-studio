@@ -38,32 +38,38 @@ if ($LASTEXITCODE -ne 0) {
     throw "Control panel build failed."
 }
 
-& $Python -m PyInstaller `
-    --noconfirm `
-    --clean `
-    --onedir `
-    --console `
-    --name "LocalOCRStudioService" `
-    --distpath $Dist `
-    --workpath "$Root\build\service" `
-    --specpath "$Root\build" `
-    --hidden-import win32timezone `
-    --hidden-import servicemanager `
-    --collect-submodules win32com `
-    "$Root\windows\ocr_studio_service.py"
+& dotnet publish `
+    "$Root\windows\LocalOCRStudioService\LocalOCRStudioService.csproj" `
+    -c Release `
+    -r win-x64 `
+    --self-contained true `
+    /p:PublishSingleFile=true `
+    /p:PublishTrimmed=false `
+    -o "$Dist\LocalOCRStudioService"
 
 if ($LASTEXITCODE -ne 0) {
     throw "Service executable build failed."
 }
 
+& dotnet publish `
+    "$Root\windows\LocalOCRStudioInstaller\LocalOCRStudioInstaller.csproj" `
+    -c Release `
+    -r win-x64 `
+    --self-contained true `
+    /p:PublishSingleFile=true `
+    /p:PublishTrimmed=false `
+    -o "$Dist\LocalOCRStudioInstaller"
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Installer executable build failed."
+}
+
 $ServiceBundleSource = Join-Path $Dist "LocalOCRStudioService"
 $ServiceBundleTarget = Join-Path $Root "service"
-$ServiceExecutable = Join-Path `
-    $ServiceBundleTarget `
-    "LocalOCRStudioService.exe"
+$ServiceExecutable = Join-Path $ServiceBundleTarget "LocalOCRStudioService.exe"
 
 if (-not (Test-Path $ServiceBundleSource)) {
-    throw "PyInstaller service bundle was not found: $ServiceBundleSource"
+    throw "Published service bundle was not found: $ServiceBundleSource"
 }
 
 Remove-Item `
@@ -96,8 +102,19 @@ $ControlPanelTarget = Join-Path `
     $Root `
     "LocalOCRStudioControlPanel.exe"
 
+$InstallerSource = Join-Path `
+    $Dist `
+    "LocalOCRStudioInstaller"
+
+$InstallerExecutable = Join-Path $InstallerSource "LocalOCRStudioInstaller.exe"
+$InstallerTarget = Join-Path $Root "LocalOCRStudioInstaller.exe"
+
 if (-not (Test-Path $ControlPanelSource)) {
     throw "Built control panel executable was not found: $ControlPanelSource"
+}
+
+if (-not (Test-Path $InstallerExecutable)) {
+    throw "Built installer executable was not found: $InstallerExecutable"
 }
 
 $ControlPanelWasRunning = $false
@@ -152,6 +169,11 @@ if ($ControlPanelWasRunning) {
         -FilePath $ControlPanelTarget
 }
 
+Copy-Item `
+    -Path $InstallerExecutable `
+    -Destination $InstallerTarget `
+    -Force `
+
 # Remove the obsolete root-level service executable to prevent accidental
 # registration of the old one-file build.
 Remove-Item `
@@ -163,4 +185,5 @@ Write-Host ""
 Write-Host "Windows executables built successfully:" -ForegroundColor Green
 Write-Host "  $Root\LocalOCRStudioControlPanel.exe"
 Write-Host "  $ServiceExecutable"
+Write-Host "  $InstallerTarget"
 

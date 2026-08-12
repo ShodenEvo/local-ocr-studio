@@ -1,17 +1,35 @@
 ﻿$ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Python = Join-Path $ProjectRoot "venv\Scripts\python.exe"
+$VenvPython = Join-Path $ProjectRoot "venv\Scripts\python.exe"
+$PythonCommand = $null
+$PythonArgs = @()
 
-if (-not (Test-Path $Python)) {
-    throw "Virtual environment not found: $Python"
+if (Test-Path $VenvPython) {
+    $PythonCommand = $VenvPython
+}
+else {
+    if (Get-Command python.exe -ErrorAction SilentlyContinue) {
+        $PythonCommand = "python.exe"
+    }
+    elseif (Get-Command python -ErrorAction SilentlyContinue) {
+        $PythonCommand = "python"
+    }
+    elseif (Get-Command py -ErrorAction SilentlyContinue) {
+        $PythonCommand = "py"
+        $PythonArgs += "-3"
+    }
+}
+
+if (-not $PythonCommand) {
+    throw "Python interpreter not found. Create the project virtual environment or install Python on PATH. Expected venv: $VenvPython"
 }
 
 Set-Location $ProjectRoot
 
-& $Python -m pip install --upgrade pyinstaller
+& $PythonCommand @PythonArgs -m pip install --upgrade pyinstaller
 
-& $Python -m PyInstaller `
+& $PythonCommand @PythonArgs -m PyInstaller `
     --noconfirm `
     --clean `
     --onefile `

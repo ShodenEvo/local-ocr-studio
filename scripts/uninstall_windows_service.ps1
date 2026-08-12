@@ -20,9 +20,7 @@ if (-not $isAdmin) {
 }
 
 if (Test-Path $ServiceExe) {
-    & $ServiceExe stop 2>$null
-    Start-Sleep -Seconds 1
-    & $ServiceExe remove
+    & $ServiceExe --uninstall
 }
 else {
     sc.exe stop LocalOCRStudio 2>$null

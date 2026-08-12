@@ -127,31 +127,66 @@ class LocalOCRStudioService(win32serviceutil.ServiceFramework):
             str(port),
         ]
 
-        self.log_handle.write(
-            f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting: "
-            + subprocess.list2cmdline(command)
-            + "\n"
-        )
-
-        self.process = subprocess.Popen(
-            command,
-            cwd=self.root,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=self.log_handle,
-            stderr=subprocess.STDOUT,
-            text=True,
-            creationflags=creationflags,
-        )
+        max_restart_attempts = 5
+        restart_window_seconds = 300
+        restart_attempts = 0
+        restart_window_start = time.monotonic()
 
         while True:
-            wait_result = win32event.WaitForSingleObject(self.stop_event, 1000)
-            if wait_result == win32event.WAIT_OBJECT_0:
+            if win32event.WaitForSingleObject(self.stop_event, 0) == win32event.WAIT_OBJECT_0:
+                break
+
+            self.log_handle.write(
+                f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting: "
+                + subprocess.list2cmdline(command)
+                + "\n"
+            )
+
+            self.process = subprocess.Popen(
+                command,
+                cwd=self.root,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=self.log_handle,
+                stderr=subprocess.STDOUT,
+                text=True,
+                creationflags=creationflags,
+            )
+
+            while True:
+                wait_result = win32event.WaitForSingleObject(self.stop_event, 1000)
+                if wait_result == win32event.WAIT_OBJECT_0:
+                    break
+
+                exit_code = self.process.poll()
+                if exit_code is not None:
+                    break
+
+            if win32event.WaitForSingleObject(self.stop_event, 0) == win32event.WAIT_OBJECT_0:
                 break
 
             exit_code = self.process.poll()
-            if exit_code is not None:
-                raise RuntimeError(f"OCR server exited unexpectedly with code {exit_code}")
+            if exit_code is None:
+                continue
+
+            message = f"OCR server exited unexpectedly with code {exit_code}"
+            self.log_handle.write(
+                f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}. Restarting in 5 seconds...\n"
+            )
+            servicemanager.LogErrorMsg(f"{SERVICE_DISPLAY_NAME}: {message}")
+
+            self.process = None
+            if time.monotonic() - restart_window_start > restart_window_seconds:
+                restart_attempts = 0
+                restart_window_start = time.monotonic()
+
+            restart_attempts += 1
+            if restart_attempts > max_restart_attempts:
+                raise RuntimeError(
+                    f"{message}; too many restart attempts ({restart_attempts})"
+                )
+
+            time.sleep(5)
 
     def _stop_process(self) -> None:
         process = self.process

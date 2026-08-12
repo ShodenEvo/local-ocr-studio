@@ -41,7 +41,7 @@ class ControlPanel:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root_dir = project_root()
-        self.service_exe = self.root_dir / "LocalOCRStudioService.exe"
+        self.service_exe = self.root_dir / "service" / "LocalOCRStudioService.exe"
         self.log_path = self.root_dir / "logs" / "service.log"
         self.tray = None
         self.last_log_size = -1
@@ -238,7 +238,7 @@ class ControlPanel:
             return
         exe = str(self.service_exe).replace("'", "''")
         self.elevated_powershell(
-            f"& '{exe}' --startup auto install; & '{exe}' start"
+            f"& '{exe}' --install"
         )
 
     def remove_service(self) -> None:
@@ -250,7 +250,7 @@ class ControlPanel:
         if self.service_exe.exists():
             exe = str(self.service_exe).replace("'", "''")
             self.elevated_powershell(
-                f"& '{exe}' stop; Start-Sleep -Seconds 1; & '{exe}' remove"
+                f"& '{exe}' --uninstall"
             )
         else:
             self.elevated_powershell(

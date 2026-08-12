@@ -26,11 +26,9 @@ if (-not (Test-Path $ServiceExe)) {
 
 Set-Location $Root
 
-& $ServiceExe stop 2>$null
-& $ServiceExe remove 2>$null
+& $ServiceExe --uninstall 2>$null
 Start-Sleep -Seconds 1
-& $ServiceExe --startup auto install
-& $ServiceExe start
+& $ServiceExe --install
 
 if (Test-Path $ManagerExe) {
     $Startup = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup"

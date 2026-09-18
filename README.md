@@ -58,6 +58,12 @@ Python packages are only part of the installation.
 
 GPU acceleration improves speed, not OCR accuracy by itself.
 
+## Pre-requisit installations:
+```powershell
+winget install Python.Python
+winget install --id Git.Git -e --source winget
+```
+
 ## Windows installation
 
 ```powershell
